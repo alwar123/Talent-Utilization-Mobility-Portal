@@ -31,7 +31,21 @@ function load() {
 }
 
 function persist(state) {
-  localStorage.setItem(KEY, JSON.stringify(state))
+  try {
+    const payload = JSON.stringify(state)
+    localStorage.setItem(KEY, payload)
+  } catch (error) {
+    const safeUsers = (state.users || []).map((user) => ({
+      ...user,
+      photo: typeof user.photo === "string" && user.photo.length > 180000 ? "" : user.photo,
+    }))
+
+    try {
+      localStorage.setItem(KEY, JSON.stringify({ ...state, users: safeUsers }))
+    } catch {
+      console.warn("Storage quota exceeded; profile photos were dropped to keep the app running.")
+    }
+  }
 }
 
 export function StoreProvider({ children }) {

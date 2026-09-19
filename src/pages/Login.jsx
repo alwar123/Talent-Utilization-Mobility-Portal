@@ -15,8 +15,8 @@ export default function Login() {
   return (
     <main className="grid min-h-[calc(100svh-88px)] md:grid-cols-2">
       <section className="flex flex-col justify-between bg-night px-8 py-16 text-white md:px-14">
-        <p className="font-mono text-[12px] tracking-[0.28em] uppercase text-coral">SkillSphere access</p>
-        <h1 className="display max-w-md text-5xl leading-[1.08]">Sign in to your desk.</h1>
+        <p className="font-mono text-[12px] tracking-[0.28em] uppercase text-coral">TalentFlow AI access</p>
+        <h1 className="display max-w-md text-5xl leading-[1.08]">Sign in to your mobility desk.</h1>
         <p className="max-w-sm text-white/60">Employee: john@skillsphere.test · HR: hr@skillsphere.test · password demo</p>
       </section>
       <section className="flex items-center px-8 py-16 md:px-14">

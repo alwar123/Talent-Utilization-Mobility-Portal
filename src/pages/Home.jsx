@@ -3,9 +3,9 @@ import HeroArt from "../components/HeroArt"
 import { BracketKicker, Cta } from "../components/Ui"
 
 const bands = [
-  { title: "Employee marketplace", body: "Every person is a living skill graph — resume-parsed, tagged, and visible to the roles that actually fit." },
-  { title: "Fit / Unfit matching", body: "Post a job once. AI scores the tenant, explains gaps, and writes the upskill plan instead of a silent rejection." },
-  { title: "Assess & decide", body: "HR schedules a 30-minute MCQ from the JD. Scores land back on both desks with accept or reject." },
+  { title: "AI-powered talent discovery", body: "Every employee gets a living skill graph from profile data, GitHub signals, and project evidence so the right internal roles surface fast." },
+  { title: "Explainable fit / unfit analysis", body: "The platform shows why someone fits or misses a role, highlights skill gaps, and turns that insight into an upskilling path instead of a blunt rejection." },
+  { title: "Assessment + HR decision loop", body: "HR can schedule an AI-generated assessment, review the result, and accept or reject with a clear decision trail and employee notification." },
 ]
 
 const pillars = [
@@ -30,15 +30,17 @@ export default function Home() {
       <section className="relative overflow-hidden">
         <HeroArt />
         <div className="relative mx-auto max-w-[1440px] px-6 pb-20 pt-6 md:px-10 md:pb-28 md:pt-10 lg:px-16">
-          <BracketKicker>Workforce talent marketplace</BracketKicker>
+          <BracketKicker>AI-powered internal talent discovery</BracketKicker>
           <h1 className="display max-w-[980px] text-[46px] leading-[1.12] md:text-[74px] md:leading-[1.2]">
-            Match. Assess.
+            Discover talent.
             <br />
-            Grow. Repeat.
+            Explain fit.
+            <br />
+            Upskill. Decide.
           </h1>
-          <p className="mt-8 max-w-[520px] text-[17px] leading-8 text-ink-soft">
-            SkillSphere turns your workforce into an internal talent marketplace — every employee seen, matched,
-            assessed, and grown, with AI on both desks.
+          <p className="mt-8 max-w-[620px] text-[17px] leading-8 text-ink-soft">
+            TalentFlow AI helps teams identify internal mobility opportunities, explain match quality,
+            recommend upskilling paths, and drive faster HR assessment decisions with real employee context.
           </p>
           <div className="mt-10 flex flex-wrap gap-4">
             <Cta to="/login">Employee login</Cta>
@@ -63,7 +65,7 @@ export default function Home() {
       <section className="bg-night text-white">
         <div className="grid-overlay-dark">
           <div className="mx-auto max-w-[1440px] px-6 py-20 md:px-10 md:py-28 lg:px-16">
-            <h2 className="display max-w-3xl text-[42px] md:text-[64px]">One Platform. Two Sides.</h2>
+            <h2 className="display max-w-3xl text-[42px] md:text-[64px]">One platform. Two decision layers.</h2>
             {pillars.map((item) => (
               <article key={item.n} className="grid gap-4 border-t border-white/15 py-12 md:grid-cols-[72px_1fr_1fr] md:items-center">
                 <span className="font-mono text-[13px] tracking-widest text-coral">{item.n}</span>
@@ -94,12 +96,12 @@ export default function Home() {
       <section className="relative overflow-hidden">
         <HeroArt />
         <div className="relative mx-auto max-w-[1440px] px-6 py-24 md:px-10 lg:px-16">
-          <h2 className="display text-[44px] md:text-[56px]">Start matching</h2>
+          <h2 className="display text-[44px] md:text-[56px]">Start the internal mobility workflow</h2>
           <p className="mt-6 max-w-xl text-lg text-ink-soft">
-            Demo accounts are preloaded. John is an Engineering senior. Maya is HR.
+            Demo accounts are preloaded to show employee profiling, AI match explanations, upskilling guidance, and the HR assessment decision flow.
           </p>
           <div className="mt-10">
-            <Cta to="/login">Open SkillSphere</Cta>
+            <Cta to="/login">Open TalentFlow AI</Cta>
           </div>
         </div>
       </section>

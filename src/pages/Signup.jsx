@@ -4,6 +4,22 @@ import { Field } from "../components/Ui"
 import { DEPTS } from "../lib/seed"
 import { useStore } from "../lib/store"
 
+const FLOW_STEPS = [
+  "Basic Account",
+  "Email Verification",
+  "Professional Profile Setup",
+  "Resume Upload",
+  "Skills",
+  "Experience",
+  "Projects",
+  "GitHub",
+  "Certifications",
+  "LinkedIn",
+  "Career Interests",
+  "AI Profile Generation",
+  "Employee Dashboard",
+]
+
 export default function Signup() {
   const { signup } = useStore()
   const navigate = useNavigate()
@@ -20,9 +36,21 @@ export default function Signup() {
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
 
   return (
-    <main className="mx-auto max-w-xl px-6 py-16">
+    <main className="mx-auto max-w-3xl px-6 py-16">
       <p className="font-mono text-[12px] tracking-[0.28em] uppercase text-coral">Create account</p>
       <h1 className="display mt-4 text-5xl">Employee signup</h1>
+
+      <div className="mt-8 grid gap-2 rounded-2xl border border-black/10 bg-mist p-4 md:grid-cols-3">
+        {FLOW_STEPS.map((step, index) => (
+          <div key={step} className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-ink/60">
+            <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-[10px] ${index <= 1 ? "bg-coral text-ink" : "bg-white"}`}>
+              {index + 1}
+            </span>
+            <span>{step}</span>
+          </div>
+        ))}
+      </div>
+
       {!otpSent ? (
         <form
           className="mt-10 space-y-5"

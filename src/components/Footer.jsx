@@ -3,7 +3,7 @@ import Logo from "./Logo"
 
 const columns = [
   {
-    title: "Talent Utilization Mobility Portal",
+    title: "TalentFlow AI",
     links: [
       ["About", "/about"],
       ["Login", "/login"],
@@ -64,7 +64,7 @@ export default function Footer() {
             ))}
           </nav>
           <p className="mt-16 font-mono text-xs tracking-wide text-ink/45">
-            © 2026 Talent Utilization Mobility Portal. Demo product. Matching, MCQs, and chat run locally — no live Gemini key required.
+            © 2026 TalentFlow AI. AI-powered internal talent discovery, explainable fit analysis, upskilling, and HR decisions run locally in this demo.
           </p>
         </div>
       </div>
