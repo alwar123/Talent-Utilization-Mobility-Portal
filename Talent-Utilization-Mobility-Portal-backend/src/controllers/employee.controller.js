@@ -457,7 +457,7 @@ const getAssessmentResult = async (req, res) => {
 };
 
 module.exports = { 
-  sendOtp, signup, login, verifyToken, 
+  signup, login, verifyToken, 
   uploadResume, getProfile, updateProfile, getCompleteness,
   getFitJobs, getUnfitJobs, getJobDetail, getGapAnalysis,
   getMyAssessments, getAssessmentDetail, submitAssessment, getAssessmentResult 
