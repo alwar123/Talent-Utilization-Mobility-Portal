@@ -10,7 +10,6 @@ const { getJob }        = require('../models/Job');
 const { getAssessment } = require('../models/Assessment');
 const { sendSuccess, sendError, sendValidationError } = require('../utils/response');
 const { uploadToCloudinary } = require('../middleware/upload');
-const { sendOtpEmail } = require('../utils/email');
 
 // ── Lazy model references ─────────────────────────────────────────────────────
 // These are resolved on first use (after connectDatabases() has completed).
@@ -19,11 +18,6 @@ let _E, _J, _A;
 const Employee   = new Proxy({}, { get: (_, p) => { const m = _E || (_E = getEmployee()); const v = m[p]; return typeof v === 'function' ? v.bind(m) : v; } });
 const Job        = new Proxy({}, { get: (_, p) => { const m = _J || (_J = getJob());        const v = m[p]; return typeof v === 'function' ? v.bind(m) : v; } });
 const Assessment = new Proxy({}, { get: (_, p) => { const m = _A || (_A = getAssessment()); const v = m[p]; return typeof v === 'function' ? v.bind(m) : v; } });
-
-// ── In-memory OTP store (for demo purposes) ───────────────────────────────────
-const otpStore = new Map(); // Key: email, Value: { otp, expires }
-
-
 
 const JWT_EXPIRY = '7d';
 
@@ -39,52 +33,14 @@ function generateToken(employee) {
 
 // ── Phase 1: Auth ──────────────────────────────────────────────────────────────
 
-const sendOtp = async (req, res) => {
-  const { email, fullName } = req.body;
-  if (!email || !fullName) return sendError(res, 'Email and full name are required.', 400);
-
-  try {
-    const existing = await Employee.findOne({ email: email.toLowerCase().trim() });
-    if (existing) return sendError(res, 'An account with this email already exists.', 409);
-
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expires = Date.now() + 10 * 60 * 1000; // 10 minutes
-    
-    otpStore.set(email.toLowerCase().trim(), { otp, expires });
-    
-    await sendOtpEmail(email.toLowerCase().trim(), fullName.trim(), otp);
-    return sendSuccess(res, null, 'OTP sent successfully.');
-  } catch (err) {
-    console.error('[sendOtp] Error:', err.message);
-    return sendError(res, 'Failed to send OTP.', 500);
-  }
-};
-
 const signup = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return sendValidationError(res, errors.array());
 
-  const { fullName, email, password, department, employeeId, otp } = req.body;
+  const { fullName, email, password, department, employeeId } = req.body;
 
   try {
     const normalizedEmail = email.toLowerCase().trim();
-    
-    // Verify OTP
-    if (!otp) return sendError(res, 'OTP is required.', 400);
-
-    const isTestBypass = otp === '000000' && normalizedEmail.endsWith('@skillsphere.dev');
-    
-    if (!isTestBypass) {
-      const stored = otpStore.get(normalizedEmail);
-      console.log(`[DEBUG signup] email: ${normalizedEmail}, submitted otp: ${otp}, stored:`, stored);
-      
-      if (!stored) return sendError(res, 'No OTP found or expired. Please request a new one.', 400);
-      if (Date.now() > stored.expires) {
-        otpStore.delete(normalizedEmail);
-        return sendError(res, 'OTP has expired. Please request a new one.', 400);
-      }
-      if (stored.otp !== otp) return sendError(res, 'Invalid OTP.', 400);
-    }
 
     const existingByEmail = await Employee.findOne({ email: normalizedEmail });
     if (existingByEmail) return sendError(res, 'An account with this email already exists.', 409);
@@ -99,8 +55,6 @@ const signup = async (req, res) => {
       department: department.trim().toUpperCase(),
       employeeId: employeeId.trim().toUpperCase(),
     });
-
-    otpStore.delete(normalizedEmail); // Clear OTP after successful signup
 
     const token = generateToken(employee);
     return sendSuccess(res, { employee, token }, 'Account created successfully.', 201);

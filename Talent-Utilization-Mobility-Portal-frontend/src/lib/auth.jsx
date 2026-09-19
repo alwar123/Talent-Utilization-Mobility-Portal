@@ -52,18 +52,12 @@ export function AuthProvider({ children }) {
     return res.data.employee;
   };
 
-  const sendOtp = async (email, fullName) => {
-    await apiFetch("/auth/send-otp", {
-      method: "POST",
-      body: JSON.stringify({ email, fullName }),
-    });
-  };
 
   // Re-fetch profile (useful after completing onboarding)
   const refreshUser = () => fetchProfile();
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, signup, sendOtp, refreshUser }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, signup, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
