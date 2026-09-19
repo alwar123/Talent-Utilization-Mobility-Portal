@@ -1,53 +1,70 @@
 """
-main.py — SkillSphere AI Service entry point (FastAPI)
+main.py — SkillSphere AI Service (FastAPI)
 
-Routers mounted under /ai prefix:
-  POST /ai/match-role       matching.py
-  POST /ai/gap-analysis     matching.py
-  POST /ai/generate-mcq     assessment.py
-  POST /ai/score-assessment assessment.py
+Registers all routers and wires up startup/shutdown lifecycle hooks.
+
+Phase 0: health check endpoint + service initialisation
+Phase 2+: resume, matching, chat, github routers imported here
 """
 
-import os
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 
-from app.routers import matching, assessment
+from app.config import initialise_all
 
-# ── App ───────────────────────────────────────────────────────────────────────
+# ── Logging ────────────────────────────────────────────────────────────────────
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-8s  %(name)s — %(message)s",
+)
+
+logger = logging.getLogger(__name__)
+
+# ── FastAPI app ────────────────────────────────────────────────────────────────
 
 app = FastAPI(
     title="SkillSphere AI Service",
-    description="AI endpoints for talent matching, gap analysis, MCQ generation, and assessment scoring.",
-    version="1.0.0",
+    description="Resume parsing, semantic job matching, gap analysis, and career chat.",
+    version="0.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )
 
-# ── CORS ──────────────────────────────────────────────────────────────────────
-# In production restrict origins to your frontend domain.
+# ── CORS ───────────────────────────────────────────────────────────────────────
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],   # tighten in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ── Routers ───────────────────────────────────────────────────────────────────
-app.include_router(matching.router,   prefix="/ai", tags=["Matching"])
-app.include_router(assessment.router, prefix="/ai", tags=["Assessment"])
+# ── Lifecycle ──────────────────────────────────────────────────────────────────
 
-# ── Health ────────────────────────────────────────────────────────────────────
+@app.on_event("startup")
+async def startup_event():
+    logger.info("[Startup] Initialising AI service clients…")
+    initialise_all()
+    logger.info("[Startup] AI service ready.")
+
+
+# ── Health check ───────────────────────────────────────────────────────────────
+
 @app.get("/health", tags=["Health"])
 async def health():
     return {"status": "ok", "service": "skillsphere-ai"}
 
-# ── Global error handler ──────────────────────────────────────────────────────
-@app.exception_handler(Exception)
-async def global_exception_handler(request, exc):
-    return JSONResponse(
-        status_code=500,
-        content={"error": "Internal AI service error", "detail": str(exc)},
-    )
+
+# ── Routers (Phase 2+) ─────────────────────────────────────────────────────────
+
+from app.routers import resume, matching, assessment, chat, github
+
+app.include_router(resume.router,     prefix="/ai", tags=["Resume"])
+app.include_router(matching.router,   prefix="/ai", tags=["Matching"])
+app.include_router(assessment.router, prefix="/ai", tags=["Assessments"])
+app.include_router(chat.router,       prefix="/ai", tags=["Chat"])
+app.include_router(github.router,     prefix="/ai", tags=["GitHub"])

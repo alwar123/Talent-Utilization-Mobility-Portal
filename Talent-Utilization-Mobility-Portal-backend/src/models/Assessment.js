@@ -1,77 +1,103 @@
-const mongoose = require("mongoose");
+/**
+ * Assessment.js — Shared model for Employee Assessments
+ *
+ * Bound to `adminConn` (shared with HR Admin).
+ * Contains sensitive grading data (`correctAnswer`) which is stripped from JSON
+ * automatically to prevent cheating.
+ */
 
-// ── Sub-schemas ───────────────────────────────────────────────────────────────
+const mongoose = require('mongoose');
+const { adminConn } = require('../config/db');
 
-const QuestionSchema = new mongoose.Schema(
+const { Schema } = mongoose;
+
+const OptionSchema = new Schema(
   {
-    question: { type: String, required: true },
-    options: {
-      A: { type: String, required: true },
-      B: { type: String, required: true },
-      C: { type: String, required: true },
-      D: { type: String, required: true },
-    },
-    correctAnswer: { type: String, enum: ["A", "B", "C", "D"], required: true },
+    id: { type: String, required: true },
+    text: { type: String, required: true },
   },
   { _id: false }
 );
 
-const AnswerSchema = new mongoose.Schema(
+const QuestionSchema = new Schema(
   {
-    questionIndex:  { type: Number, required: true },
-    selectedAnswer: { type: String, enum: ["A", "B", "C", "D"] },
+    questionText: { type: String, required: true },
+    options: [OptionSchema],
+    correctAnswer: { type: String, required: true, select: false }, // Crucial: select: false hides it by default
   },
   { _id: false }
 );
 
-// ── Main schema ───────────────────────────────────────────────────────────────
-
-const AssessmentSchema = new mongoose.Schema(
+const SubmittedAnswerSchema = new Schema(
   {
-    jobId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Job",
-      required: true,
-    },
+    questionIndex: { type: Number, required: true },
+    selectedAnswer: { type: String, required: true },
+  },
+  { _id: false }
+);
+
+const AssessmentSchema = new Schema(
+  {
+    // ── References ─────────────────────────────────────────────────────────────
     employeeId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Employee",
+      type: String,
+      required: true,
+      index: true,
+    },
+    jobId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Job',
       required: true,
     },
-    scheduledDate: { type: Date,   required: true },
-    scheduledTime: { type: String, required: true },  // e.g. "10:00 AM"
-    duration:      { type: Number, default: 30 },     // minutes
 
+    // ── Schedule details ───────────────────────────────────────────────────────
+    scheduledAt: { type: Date, required: true },
+    durationMinutes: { type: Number, default: 30 },
     status: {
       type: String,
-      enum: ["upcoming", "in-progress", "completed", "cancelled"],
-      default: "upcoming",
+      enum: ['upcoming', 'completed', 'cancelled'],
+      default: 'upcoming',
     },
 
+    // ── Content ────────────────────────────────────────────────────────────────
     questions: [QuestionSchema],
 
-    // ── Filled when employee submits ─────────────────────────────────────────
-    submittedAnswers: [AnswerSchema],
-    score:      { type: Number },   // correct answers count out of 30
-    percentage: { type: Number },   // 0–100
-    aiSummary:  { type: String },   // 3-sentence AI performance summary
+    // ── Employee Submission ────────────────────────────────────────────────────
+    submittedAnswers: [SubmittedAnswerSchema],
+    submittedAt: { type: Date },
 
-    // ── HR decision ──────────────────────────────────────────────────────────
+    // ── Grading & AI Feedback ──────────────────────────────────────────────────
+    score: { type: Number },
+    percentage: { type: Number },
+    aiSummary: { type: String },
+
+    // ── HR Decision ────────────────────────────────────────────────────────────
     hrAction: {
       type: String,
-      enum: ["pending", "accepted", "rejected"],
-      default: "pending",
+      enum: ['pending', 'accepted', 'rejected'],
+      default: 'pending',
     },
-    hrFeedback: { type: String, default: "" },
-
-    notifiedEmployee: { type: Boolean, default: false },
+    hrFeedback: { type: String },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    strict: false, // Tolerate HR schema variations
+  }
 );
 
-// Indexes for common query patterns
-AssessmentSchema.index({ employeeId: 1, status: 1 });
-AssessmentSchema.index({ jobId: 1, status: 1 });
-AssessmentSchema.index({ hrAction: 1 });
+// ── Security Transform ─────────────────────────────────────────────────────────
+AssessmentSchema.set('toJSON', {
+  virtuals: true,
+  transform(doc, ret) {
+    delete ret.__v;
+    // Extra safety measure: remove correctAnswer from JSON entirely
+    if (ret.questions) {
+      ret.questions.forEach(q => delete q.correctAnswer);
+    }
+    return ret;
+  },
+});
 
-module.exports = mongoose.model("Assessment", AssessmentSchema);
+const Assessment = adminConn.model('Assessment', AssessmentSchema);
+
+module.exports = Assessment;

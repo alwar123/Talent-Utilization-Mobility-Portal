@@ -1,233 +1,254 @@
-"""
-matching.py — AI endpoints for HR job-match analysis.
-
-Endpoints
----------
-POST /ai/match-role      → Pinecone similarity search + Groq fit/unfit explanations
-POST /ai/gap-analysis    → Detailed skill gap + upskill roadmap for a specific employee
-"""
-
 import json
-import re
+import logging
+from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from sentence_transformers.util import cos_sim
 
-from app.config import groq_client, embedder, pinecone_index
+from app.config import get_embedder, get_groq_client
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
-# ── Constants ─────────────────────────────────────────────────────────────────
+class JobPayload(BaseModel):
+    job_id: str
+    description: str
 
-FIT_THRESHOLD   = 0.70   # Pinecone cosine similarity score ≥ 0.70 → fit
-TOP_K           = 50     # Pull top 50 candidates per query
+class MatchRequest(BaseModel):
+    employee_id: str
+    employee_skills: List[Dict[str, Any]]
+    jobs: List[JobPayload]
 
-FAST_MODEL      = "llama-3.1-8b-instant"    # for bulk explain (speed)
-SMART_MODEL     = "llama-3.1-70b-versatile"  # for detailed roadmap (quality)
+@router.post("/employee-job-scores")
+def employee_job_scores(payload: MatchRequest):
+    """
+    Given an employee's skills and a list of jobs, calculates a fit score (0.0 to 1.0),
+    reasons for the fit, and any missing skills.
+    
+    Uses SentenceTransformers for fast semantic scoring and Groq for gap analysis.
+    """
+    if not payload.jobs:
+        return []
 
-# ── Request models ────────────────────────────────────────────────────────────
+    try:
+        embedder = get_embedder()
+        groq_client = get_groq_client()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
-class MatchRoleRequest(BaseModel):
-    job_id:     str
-    department: str
-    jd_text:    str
+    # Convert employee skills to a single text block
+    skill_texts = [f"{s.get('name', '')} ({s.get('level', 'intermediate')})" for s in payload.employee_skills]
+    employee_profile_text = "Skills: " + ", ".join(skill_texts)
+
+    # 1. Fast Semantic Scoring (Cosine Similarity)
+    try:
+        emp_embedding = embedder.encode(employee_profile_text)
+        job_texts = [j.description for j in payload.jobs]
+        job_embeddings = embedder.encode(job_texts)
+        
+        # Calculate cosine similarities (tensor of shape [1, num_jobs])
+        similarities = cos_sim(emp_embedding, job_embeddings)[0].tolist()
+    except Exception as e:
+        logger.error("Embedding calculation failed: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to calculate semantic similarities.")
+
+    results = []
+    
+    # 2. LLM Gap Analysis for jobs
+    # To avoid rate limits/slow responses, we only ask Groq to analyse jobs that are somewhat relevant
+    # For now, let's just do a quick loop or batched prompt.
+    for idx, job in enumerate(payload.jobs):
+        score = similarities[idx]
+        
+        # Normalise score slightly to push it into 0-1 range cleanly if it isn't
+        score = max(0.0, min(1.0, score))
+        
+        # We'll use a heuristic for missing skills if we don't want to block on LLM for 50 jobs.
+        # But for Phase 3, we'll prompt Groq for a quick JSON analysis.
+        # To make it robust, we'll just mock the reasons here if we're simulating,
+        # or do a single fast Groq call for the top jobs. Let's do a fast Groq call per job.
+        
+        prompt = f"""
+        Compare the candidate's skills with the job description.
+        Output ONLY raw JSON format: {{"reasons": ["reason 1", "reason 2"], "missing_skills": ["skill 1", "skill 2"]}}
+        
+        Candidate Skills: {employee_profile_text}
+        
+        Job Description: {job.description}
+        """
+        
+        reasons = ["Good match based on semantic similarity."]
+        missing_skills = []
+        
+        try:
+            chat_completion = groq_client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model="qwen/qwen3.8-27b",
+                temperature=0.0,
+            )
+            raw_json = chat_completion.choices[0].message.content
+            if raw_json.startswith("```json"): raw_json = raw_json[7:]
+            if raw_json.startswith("```"): raw_json = raw_json[3:]
+            if raw_json.endswith("```"): raw_json = raw_json[:-3]
+            
+            parsed = json.loads(raw_json.strip())
+            reasons = parsed.get("reasons", reasons)
+            missing_skills = parsed.get("missing_skills", missing_skills)
+        except Exception as e:
+            logger.warning("Groq gap analysis failed for job %s: %s", job.job_id, e)
+            if score < 0.7:
+                missing_skills = ["Some required skills from the description are missing."]
+
+        results.append({
+            "job_id": job.job_id,
+            "score": round(score, 2),
+            "reasons": reasons,
+            "missing_skills": missing_skills
+        })
+
+    return results
 
 class GapAnalysisRequest(BaseModel):
-    job_id:          str
-    employee_id:     str
-    jd_text:         str
-    role_title:      str
-    employee_skills: str   # JSON string: [{"name": "Python", "proficiency": "Expert"}, ...]
-    experience_summary: Optional[str] = ""
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _safe_json_list(text: str) -> list:
-    """Extract the first JSON array from an LLM response."""
-    match = re.search(r'\[.*?\]', text, re.DOTALL)
-    if not match:
-        return []
-    try:
-        return json.loads(match.group())
-    except json.JSONDecodeError:
-        return []
-
-
-def _safe_json_obj(text: str) -> dict:
-    """Extract the first JSON object from an LLM response."""
-    match = re.search(r'\{.*\}', text, re.DOTALL)
-    if not match:
-        return {}
-    try:
-        return json.loads(match.group())
-    except json.JSONDecodeError:
-        return {}
-
-
-def _explain_fit(jd: str, skill_summary: str) -> list[str]:
-    """Ask Groq why this employee is a good fit — returns list of reason strings."""
-    prompt = f"""
-Job Description (excerpt):
-{jd[:1500]}
-
-Employee Skill Summary:
-{skill_summary}
-
-List 3–5 specific, concrete reasons why this employee is a strong fit for this role.
-Return ONLY a valid JSON array of strings. No extra text, no markdown.
-Example: ["Has 5 years Python experience required by the role", "Led cross-functional teams"]
-"""
-    resp = groq_client.chat.completions.create(
-        model=FAST_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
-        max_tokens=400,
-    )
-    return _safe_json_list(resp.choices[0].message.content)
-
-
-def _explain_unfit(jd: str, skill_summary: str) -> list[str]:
-    """Ask Groq what skills the employee is missing — returns list of gap strings."""
-    prompt = f"""
-Job Description (excerpt):
-{jd[:1500]}
-
-Employee Skill Summary:
-{skill_summary}
-
-List the key skills or experiences this employee is MISSING for this role.
-Be specific (e.g. "TensorFlow/PyTorch — not in profile" not just "ML").
-Return ONLY a valid JSON array of strings. Max 6 items. No markdown.
-"""
-    resp = groq_client.chat.completions.create(
-        model=FAST_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
-        max_tokens=400,
-    )
-    return _safe_json_list(resp.choices[0].message.content)
-
-
-# ── Routes ────────────────────────────────────────────────────────────────────
-
-@router.post("/match-role")
-async def match_role(data: MatchRoleRequest):
-    """
-    1. Embed the JD text using sentence-transformers.
-    2. Query Pinecone filtered by department, get top 50 candidates.
-    3. Split into fit (score ≥ 0.70) and unfit lists.
-    4. Call Groq to explain each result.
-    5. Return { fit: [...], unfit: [...] }
-    """
-    # 1. Embed JD
-    jd_embedding = embedder.encode(data.jd_text).tolist()
-
-    # 2. Pinecone query — filter by department so only relevant employees surface
-    try:
-        results = pinecone_index.query(
-            vector=jd_embedding,
-            top_k=TOP_K,
-            filter={"department": {"$eq": data.department}},
-            include_metadata=True,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Pinecone query failed: {str(e)}")
-
-    fit_list   = []
-    unfit_list = []
-
-    for match in results.matches:
-        employee_id   = match.id
-        score         = round(float(match.score), 4)
-        skill_summary = match.metadata.get("skill_summary", "")
-
-        if score >= FIT_THRESHOLD:
-            reasons = _explain_fit(data.jd_text, skill_summary)
-            fit_list.append({
-                "employee_id": employee_id,
-                "score":       score,
-                "reasons":     reasons,
-            })
-        else:
-            missing = _explain_unfit(data.jd_text, skill_summary)
-            unfit_list.append({
-                "employee_id":   employee_id,
-                "score":         score,
-                "missing_skills": missing,
-            })
-
-    # Sort by score descending within each bucket
-    fit_list.sort(key=lambda x: x["score"], reverse=True)
-    unfit_list.sort(key=lambda x: x["score"], reverse=True)
-
-    return {"fit": fit_list, "unfit": unfit_list}
-
+    employee_skills: List[Dict[str, Any]]
+    experience: List[Dict[str, Any]]
+    job_title: str
+    job_description: str
+    job_requirements: str
 
 @router.post("/gap-analysis")
-async def gap_analysis(data: GapAnalysisRequest):
+def gap_analysis(payload: GapAnalysisRequest):
     """
-    Detailed gap analysis + month-by-month upskill roadmap for a specific employee
-    against a specific role.  Used by the Employee 'Unfit Job Detail' page.
+    Phase 4: Provides detailed gap analysis and a 6-month roadmap
+    to help an employee bridge the gap to a target job.
+    """
+    try:
+        groq_client = get_groq_client()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
-    Returns:
-    {
-      "matchPercent":  42,
-      "hasSkills":     [...],
-      "missingSkills": [...],
-      "estimatedTime": "4–6 months",
-      "roadmap": [
-        { "phase": "Month 1–2", "focus": "ML Fundamentals", "resources": [...] }
-      ]
-    }
-    """
+    # Format employee background
+    skills_text = ", ".join([f"{s.get('name', '')} ({s.get('level', 'intermediate')})" for s in payload.employee_skills])
+    exp_text = "; ".join([f"{e.get('title', '')} at {e.get('company', '')}" for e in payload.experience])
+
     prompt = f"""
-You are a senior career coach AI. Analyse the fit between this employee and role.
+    You are an expert career coach AI.
+    Analyze the gap between the Candidate's profile and the Target Job, then build a 6-month upskilling roadmap.
 
-Role Title: {data.role_title}
-Job Description:
-{data.jd_text[:2000]}
+    Candidate Skills: {skills_text}
+    Candidate Experience: {exp_text}
 
-Employee Current Skills (JSON):
-{data.employee_skills}
+    Target Job: {payload.job_title}
+    Job Description: {payload.job_description}
+    Requirements: {payload.job_requirements}
 
-Employee Experience Summary:
-{data.experience_summary[:800] if data.experience_summary else "Not provided"}
-
-Return a single valid JSON object with this exact structure:
-{{
-  "matchPercent": <integer 0–100>,
-  "hasSkills": ["skill1 — reason it matches", ...],
-  "missingSkills": ["skill1 — why needed", ...],
-  "estimatedTime": "<X–Y months>",
-  "roadmap": [
+    Output EXACTLY in this JSON format, nothing else (no markdown tags):
     {{
-      "phase": "Month 1–2",
-      "focus": "<topic>",
-      "resources": [
-        {{ "type": "course|cert|project|practice", "title": "...", "provider": "...", "duration": "..." }}
+      "missing_skills": ["skill 1", "skill 2", ...],
+      "estimated_time_months": "4-6",
+      "roadmap": [
+        {{
+          "month": "Month 1-2",
+          "focus": "Focus area",
+          "action_items": ["Learn X", "Do Y"]
+        }},
+        {{
+          "month": "Month 3-4",
+          "focus": "Another focus",
+          "action_items": ["Learn Z"]
+        }}
       ]
     }}
-  ]
-}}
+    """
 
-Rules:
-- matchPercent must reflect how many JD requirements the employee meets
-- hasSkills: list skills they have that are required (max 6)
-- missingSkills: list critical gaps (max 8)
-- roadmap: 3–6 phases covering all missing skills
-- resources: 1–3 resources per phase, prefer free/freemium options first
-- Return ONLY the JSON object. No markdown, no extra text.
-"""
-    resp = groq_client.chat.completions.create(
-        model=SMART_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.3,
-        max_tokens=1500,
-    )
-    result = _safe_json_obj(resp.choices[0].message.content)
+    try:
+        chat_completion = groq_client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="qwen/qwen3.8-27b",
+            temperature=0.2,
+        )
+        raw_json = chat_completion.choices[0].message.content
+        if raw_json.startswith("```json"): raw_json = raw_json[7:]
+        if raw_json.startswith("```"): raw_json = raw_json[3:]
+        if raw_json.endswith("```"): raw_json = raw_json[:-3]
+        
+        parsed = json.loads(raw_json.strip())
+        return parsed
+    except Exception as e:
+        logger.error("Groq gap analysis full roadmap failed: %s", e)
+        # Fallback JSON to prevent total failure
+        return {
+            "missing_skills": ["Unable to determine missing skills at this time."],
+            "estimated_time_months": "N/A",
+            "roadmap": [
+                {
+                    "month": "Month 1-6",
+                    "focus": "General upskilling",
+                    "action_items": ["Please review the job description carefully and identify gaps manually."]
+                }
+            ]
+        }
 
-    if not result:
-        raise HTTPException(status_code=500, detail="AI failed to generate gap analysis")
+class MarketSkillsRequest(BaseModel):
+    department: str
+    current_skills: List[Dict[str, Any]]
 
-    return result
+@router.post("/market-skills")
+def market_skills(payload: MarketSkillsRequest):
+    """
+    Phase 6: Returns in-demand skills for the employee's department,
+    contextualised against their current skill set.
+    """
+    try:
+        groq_client = get_groq_client()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    skill_names = [s.get("name", "") for s in payload.current_skills]
+    skills_text = ", ".join(skill_names) if skill_names else "None specified"
+
+    prompt = f"""
+    You are a tech industry analyst.
+    Provide the top 8 most in-demand skills for the {payload.department} department right now.
+    The employee already knows: {skills_text}
+    
+    For each skill, indicate:
+    - Whether the employee already has it (based on the list above)
+    - Why it is in demand
+    - A brief learning resource suggestion
+
+    Output EXACTLY in this JSON format, nothing else (no markdown tags):
+    {{
+      "department": "{payload.department}",
+      "top_skills": [
+        {{
+          "skill": "Skill Name",
+          "already_have": false,
+          "why_in_demand": "Brief reason",
+          "learn_from": "Course or resource"
+        }}
+      ]
+    }}
+    """
+
+    try:
+        chat_completion = groq_client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="qwen/qwen3.8-27b",
+            temperature=0.3,
+        )
+        raw_json = chat_completion.choices[0].message.content
+        if raw_json.startswith("```json"): raw_json = raw_json[7:]
+        if raw_json.startswith("```"): raw_json = raw_json[3:]
+        if raw_json.endswith("```"): raw_json = raw_json[:-3]
+
+        parsed = json.loads(raw_json.strip())
+        # Append a disclaimer to avoid presenting generated content as verified facts
+        parsed["disclaimer"] = "Market skill trends are AI-generated estimates based on training data and may not reflect current real-world statistics."
+        return parsed
+    except Exception as e:
+        logger.error("Groq market-skills failed: %s", e)
+        return {
+            "department": payload.department,
+            "top_skills": [],
+            "disclaimer": "Market skill data is temporarily unavailable.",
+        }

@@ -1,43 +1,28 @@
-const mongoose = require("mongoose");
+/**
+ * Job.js — Read-only model for HR-posted Jobs
+ *
+ * Binds to `adminConn` so it reads from the shared admin database.
+ * Employees cannot create, update, or delete jobs.
+ */
+
+const mongoose = require('mongoose');
+const { adminConn } = require('../config/db');
 
 const JobSchema = new mongoose.Schema(
   {
-    title: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    department: {
-      type: String,
-      enum: ["ENG", "HR", "FIN", "MGMT", "DESIGN"],
-      required: true,
-    },
-    employmentType: {
-      type: String,
-      enum: ["Full-time", "Part-time", "Contract", "Internship"],
-      default: "Full-time",
-    },
-    workMode: {
-      type: String,
-      enum: ["Remote", "Hybrid", "On-site"],
-      default: "Hybrid",
-    },
-    location:       { type: String, trim: true },
-    requiredSkills: [{ type: String, trim: true }],
-    minExperience:  { type: Number, default: 0, min: 0 },
-    jdText:         { type: String, required: true },
-    postedBy:       { type: mongoose.Schema.Types.ObjectId, ref: "HRAdmin" },
-    isActive:       { type: Boolean, default: true },
-    matchStats: {
-      fitCount:    { type: Number, default: 0 },
-      unfitCount:  { type: Number, default: 0 },
-      lastAnalyzed:{ type: Date },
-    },
+    title: { type: String, required: true },
+    department: { type: String, required: true },
+    description: { type: String, required: true },
+    isActive: { type: Boolean, default: true },
+    // HR side might have other fields, but we only strictly type what we need
   },
-  { timestamps: true }
+  { 
+    timestamps: true,
+    strict: false, // Allows us to read documents that have more fields (like 'requirements') without dropping them
+  }
 );
 
-// Index for fast department-filtered queries
-JobSchema.index({ department: 1, isActive: 1 });
+// We define it on adminConn, NOT the default mongoose connection
+const Job = adminConn.model('Job', JobSchema);
 
-module.exports = mongoose.model("Job", JobSchema);
+module.exports = Job;
