@@ -1,4 +1,4 @@
-# 🚀 Talent Utilization & Mobility Portal (SkillSphere)
+# 🚀 Talent Utilization & Mobility Portal 
 
 > **An Enterprise AI-Powered Workforce Mobility & Skill-Intelligence Platform**
 
