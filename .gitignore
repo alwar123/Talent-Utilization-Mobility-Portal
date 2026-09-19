@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+env/
+
+# Environment secrets
+.env
+.env.*
+*.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Test / coverage artifacts
+coverage/
+.pytest_cache/
+htmlcov/
+.nyc_output/
+
+# Logs
+*.log
+logs/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Uploaded files (Cloudinary handles storage)
+uploads/
+
+# Pinecone / AI scratch
+check_models.py
+test_import.py
