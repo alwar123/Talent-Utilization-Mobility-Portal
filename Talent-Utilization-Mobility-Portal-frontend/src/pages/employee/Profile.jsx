@@ -1,14 +1,14 @@
 import { Link } from "react-router-dom"
 import { DeptChip } from "../../components/Ui"
-import { useStore } from "../../lib/store"
+import { useAuth } from "../../lib/auth"
 
 export default function Profile() {
-  const { sessionUser } = useStore()
-  const p = sessionUser
+  const { user } = useAuth()
+  const p = user || {}
   return (
     <main className="mx-auto max-w-4xl px-6 py-12">
       <p className="font-mono text-[12px] tracking-[0.28em] uppercase text-coral">Skill profile</p>
-      <h1 className="display mt-3 text-5xl">{p.name}</h1>
+      <h1 className="display mt-3 text-5xl">{p.fullName}</h1>
       <div className="mt-3 flex gap-2">
         <DeptChip id={p.department} />
         <span className="text-ink-soft">

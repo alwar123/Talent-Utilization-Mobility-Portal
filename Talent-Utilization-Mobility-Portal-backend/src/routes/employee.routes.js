@@ -11,7 +11,7 @@
 const { Router } = require('express');
 const { body } = require('express-validator');
 const { 
-  signup, login, verifyToken,
+  sendOtp, signup, login, verifyToken,
   uploadResume, getProfile, updateProfile, getCompleteness,
   getFitJobs, getUnfitJobs, getJobDetail,
   getGapAnalysis,
@@ -33,8 +33,7 @@ const signupValidation = [
   body('email')
     .trim()
     .notEmpty().withMessage('Email is required.')
-    .isEmail().withMessage('Please enter a valid email address.')
-    .normalizeEmail(),
+    .isEmail().withMessage('Please enter a valid email address.'),
 
   body('password')
     .notEmpty().withMessage('Password is required.')
@@ -53,8 +52,7 @@ const loginValidation = [
   body('email')
     .trim()
     .notEmpty().withMessage('Email is required.')
-    .isEmail().withMessage('Please enter a valid email address.')
-    .normalizeEmail(),
+    .isEmail().withMessage('Please enter a valid email address.'),
 
   body('password')
     .notEmpty().withMessage('Password is required.'),
@@ -62,6 +60,7 @@ const loginValidation = [
 
 // ── Phase 1: Auth ──────────────────────────────────────────────────────────────
 
+router.post('/auth/send-otp', sendOtp);
 router.post('/auth/signup', signupValidation, signup);
 router.post('/auth/login', loginValidation, login);
 router.get('/auth/verify', authenticate, verifyToken);

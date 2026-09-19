@@ -7,7 +7,6 @@
  */
 
 const mongoose = require('mongoose');
-const { adminConn } = require('../config/db');
 
 const { Schema } = mongoose;
 
@@ -98,6 +97,18 @@ AssessmentSchema.set('toJSON', {
   },
 });
 
-const Assessment = adminConn.model('Assessment', AssessmentSchema);
+// ── Lazy model getter ───────────────────────────────────────────────────────────────
+// Returns the Mongoose model after connectDatabases() has been called.
+// Call getAssessment() in controllers/routes to get the live model.
 
-module.exports = Assessment;
+let _Assessment = null;
+
+function getAssessment() {
+  if (!_Assessment) {
+    const { adminConn } = require('../config/db');
+    _Assessment = adminConn.model('Assessment', AssessmentSchema);
+  }
+  return _Assessment;
+}
+
+module.exports = { getAssessment, AssessmentSchema };

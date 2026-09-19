@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { Field } from "../components/Ui"
 import { useStore } from "../lib/store"
+import { useAuth } from "../lib/auth"
 
 export default function Login() {
   const [params] = useSearchParams()
@@ -9,7 +10,8 @@ export default function Login() {
   const [email, setEmail] = useState(role === "hr" ? "hr@skillsphere.test" : "john@skillsphere.test")
   const [password, setPassword] = useState("demo")
   const [error, setError] = useState("")
-  const { login } = useStore()
+  const { login: storeLogin } = useStore()
+  const { login: authLogin } = useAuth()
   const navigate = useNavigate()
 
   return (
@@ -22,16 +24,25 @@ export default function Login() {
       <section className="flex items-center px-8 py-16 md:px-14">
         <form
           className="w-full max-w-md space-y-6"
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault()
-            const res = login(email, password, role)
-            if (!res.ok) {
-              setError(res.error)
-              return
+            setError("")
+            if (role === "hr") {
+              const res = storeLogin(email, password, "hr")
+              if (!res.ok) {
+                setError(res.error)
+                return
+              }
+              navigate("/hr")
+            } else {
+              try {
+                const user = await authLogin(email, password)
+                if (!user.onboarded) navigate("/onboarding")
+                else navigate("/app")
+              } catch (err) {
+                setError(err.message)
+              }
             }
-            if (res.user.role === "hr") navigate("/hr")
-            else if (!res.user.onboarded) navigate("/onboarding")
-            else navigate("/app")
           }}
         >
           <div className="grid grid-cols-2">

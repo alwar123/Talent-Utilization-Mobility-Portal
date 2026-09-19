@@ -17,8 +17,13 @@
  */
 
 const axios = require('axios');
-const Employee = require('../models/Employee');
+const { getEmployee } = require('../models/Employee');
 const { sendSuccess, sendError } = require('../utils/response');
+
+// Lazy model alias — resolved after connectDatabases() completes
+let _E;
+const Employee = new Proxy({}, { get: (_, p) => { const m = _E || (_E = getEmployee()); const v = m[p]; return typeof v === 'function' ? v.bind(m) : v; } });
+
 
 const AI_URL = () => process.env.AI_SERVICE_URL || 'http://localhost:8000';
 

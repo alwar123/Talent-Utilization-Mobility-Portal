@@ -2,22 +2,65 @@ import { useState } from "react"
 import { Navigate, useNavigate } from "react-router-dom"
 import Logo from "../components/Logo"
 import { Field } from "../components/Ui"
-import { parseResumeFromFile } from "../lib/seed"
-import { useStore } from "../lib/store"
+import { useAuth } from "../lib/auth"
+import { apiFetch } from "../lib/api"
 
 const STEPS = ["Resume", "Basics", "Experience", "Skills", "Projects"]
 
 export default function Onboarding() {
-  const { sessionUser, finishOnboarding } = useStore()
+  const { user, refreshUser } = useAuth()
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
   const [parsed, setParsed] = useState(false)
-  const [form, setForm] = useState(() => ({ ...sessionUser }))
+  const [loading, setLoading] = useState(false)
+  const [form, setForm] = useState(() => ({ ...user }))
 
-  if (!sessionUser) return <Navigate to="/login" replace />
-  if (sessionUser.onboarded) return <Navigate to="/app" replace />
+  if (!user) return <Navigate to="/login" replace />
+  if (user.onboarded) return <Navigate to="/app" replace />
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
+
+  const handleUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setLoading(true)
+    
+    const formData = new FormData()
+    formData.append("resume", file)
+    
+    try {
+      const res = await apiFetch("/resume", {
+        method: "POST",
+        body: formData,
+      })
+      
+      const { employee } = res.data
+      setForm((f) => ({ 
+        ...f, 
+        ...employee,
+        fullName: f.fullName || employee.fullName,
+        email: f.email || employee.email
+      }))
+      setParsed(true)
+    } catch (err) {
+      alert("Failed to parse resume: " + err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleFinish = async () => {
+    try {
+      await apiFetch("/profile", {
+        method: "PUT",
+        body: JSON.stringify({ ...form, onboarded: true })
+      })
+      await refreshUser()
+      navigate("/app")
+    } catch (err) {
+      alert("Failed to save profile: " + err.message)
+    }
+  }
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
@@ -36,18 +79,14 @@ export default function Onboarding() {
 
       {step === 0 ? (
         <section className="mt-10">
-          <label className="grid min-h-48 place-items-center border border-dashed border-black/20 bg-mist px-6 py-16 text-center">
-            <span>Drag & drop PDF or DOCX — or click to upload. Parsing is simulated.</span>
+          <label className="grid min-h-48 place-items-center border border-dashed border-black/20 bg-mist px-6 py-16 text-center cursor-pointer">
+            <span>{loading ? "Parsing your resume with AI..." : "Drag & drop PDF or DOCX — or click to upload."}</span>
             <input
               type="file"
               accept=".pdf,.doc,.docx"
-              className="mt-4"
-              onChange={(e) => {
-                const file = e.target.files?.[0]
-                const data = parseResumeFromFile(file?.name)
-                setForm((f) => ({ ...f, ...data, name: f.name || data.name, email: f.email || data.email }))
-                setParsed(true)
-              }}
+              className="mt-4 hidden"
+              onChange={handleUpload}
+              disabled={loading}
             />
           </label>
           {parsed ? <p className="mt-6 text-ink-soft">We found this from your resume. Review & confirm on the next steps.</p> : null}
@@ -57,7 +96,7 @@ export default function Onboarding() {
       {step === 1 ? (
         <section className="mt-10 grid gap-5 md:grid-cols-2">
           {[
-            ["name", "Full name"],
+            ["fullName", "Full name"],
             ["email", "Email"],
             ["phone", "Phone"],
             ["city", "Location / city"],
@@ -137,10 +176,7 @@ export default function Onboarding() {
           <button
             type="button"
             className="btn-coral"
-            onClick={() => {
-              finishOnboarding(sessionUser.id, form)
-              navigate("/app")
-            }}
+            onClick={handleFinish}
           >
             Unlock dashboard
           </button>

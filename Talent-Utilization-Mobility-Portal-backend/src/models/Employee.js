@@ -202,8 +202,17 @@ EmployeeSchema.set('toJSON', {
   },
 });
 
-// ── Bind model to the employee-specific connection ─────────────────────────────
+// ── Lazy model getter ───────────────────────────────────────────────────────────────
 
-const Employee = employeeConn.model('Employee', EmployeeSchema);
+let _Employee = null;
 
-module.exports = Employee;
+function getEmployee() {
+  if (!_Employee) {
+    const { employeeConn } = require('../config/db');
+    _Employee = employeeConn.model('Employee', EmployeeSchema);
+  }
+  return _Employee;
+}
+
+module.exports = { getEmployee, EmployeeSchema };
+

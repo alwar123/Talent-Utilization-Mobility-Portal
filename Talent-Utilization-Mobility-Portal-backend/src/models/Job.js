@@ -6,7 +6,6 @@
  */
 
 const mongoose = require('mongoose');
-const { adminConn } = require('../config/db');
 
 const JobSchema = new mongoose.Schema(
   {
@@ -22,7 +21,16 @@ const JobSchema = new mongoose.Schema(
   }
 );
 
-// We define it on adminConn, NOT the default mongoose connection
-const Job = adminConn.model('Job', JobSchema);
+// ── Lazy model getter ───────────────────────────────────────────────────────────────
 
-module.exports = Job;
+let _Job = null;
+
+function getJob() {
+  if (!_Job) {
+    const { adminConn } = require('../config/db');
+    _Job = adminConn.model('Job', JobSchema);
+  }
+  return _Job;
+}
+
+module.exports = { getJob, JobSchema };

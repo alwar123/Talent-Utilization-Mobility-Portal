@@ -1,13 +1,26 @@
-const nodemailer = require("nodemailer");
+// ── EmailJS Implementation ──────────────────────────────────────────────────
+// Uses EmailJS REST API to send emails instead of SMTP
 
-// ── Transporter ───────────────────────────────────────────────────────────────
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_APP_PASSWORD,
-  },
-});
+const sendEmailJS = async (templateParams) => {
+  const payload = {
+    service_id: process.env.EMAILJS_SERVICE_ID,
+    template_id: process.env.EMAILJS_TEMPLATE_ID,
+    user_id: process.env.EMAILJS_PUBLIC_KEY,
+    accessToken: process.env.EMAILJS_PRIVATE_KEY,
+    template_params: templateParams,
+  };
+
+  try {
+    const axios = require('axios');
+    const res = await axios.post("https://api.emailjs.com/api/v1.0/email/send", payload, {
+      headers: { "Content-Type": "application/json" },
+    });
+    console.log("[EmailJS Success]:", res.data);
+  } catch (err) {
+    console.error("[EmailJS Exception]:", err.response?.data || err.message);
+    throw new Error(`EmailJS failed: ${err.response?.data || err.message}`);
+  }
+};
 
 // ── Shared HTML wrapper ───────────────────────────────────────────────────────
 const htmlWrapper = (content) => `
@@ -50,14 +63,6 @@ const htmlWrapper = (content) => `
 `;
 
 // ── sendAssessmentEmail ───────────────────────────────────────────────────────
-/**
- * Sent to employee when HR schedules an assessment.
- * @param {string} to          - Employee email
- * @param {string} name        - Employee full name
- * @param {string} role        - Job title
- * @param {string} date        - Scheduled date string
- * @param {string} time        - Scheduled time string
- */
 exports.sendAssessmentEmail = async (to, name, role, date, time) => {
   const content = `
     <h2>Hi ${name}! 👋</h2>
@@ -72,31 +77,26 @@ exports.sendAssessmentEmail = async (to, name, role, date, time) => {
     <p>Log in to <strong>SkillSphere</strong> before your assessment time and navigate to 
        <em>My Assessments</em>. The <strong>Start</strong> button will be enabled at the 
        scheduled time.</p>
-    <p style="color:#6b7280; font-size:13px;">
-      💡 Tip: Make sure you're in a quiet environment with a stable internet connection.
-    </p>
   `;
 
-  await transporter.sendMail({
-    from:    `"SkillSphere HR" <${process.env.GMAIL_USER}>`,
-    to,
+  await sendEmailJS({
+    to_email: to,
+    email: to,
+    user_email: to,
+    to: to,
+    to_name: name,
+    role: role,
+    date: date,
+    time: time,
     subject: `📋 Assessment Scheduled: ${role}`,
-    html:    htmlWrapper(content),
+    message: htmlWrapper(content),
+    html_message: htmlWrapper(content),
   });
 };
 
 // ── sendResultEmail ───────────────────────────────────────────────────────────
-/**
- * Sent to employee after HR accepts or rejects their assessment result.
- * @param {string} to          - Employee email
- * @param {string} name        - Employee full name
- * @param {string} role        - Job title
- * @param {string} action      - "accepted" | "rejected"
- * @param {string} [feedback]  - Optional HR feedback text
- */
 exports.sendResultEmail = async (to, name, role, action, feedback) => {
   const accepted = action === "accepted";
-
   const content = `
     <h2>Hi ${name}!</h2>
     <p>Your assessment result for <strong>${role}</strong> is ready:</p>
@@ -120,25 +120,24 @@ exports.sendResultEmail = async (to, name, role, action, feedback) => {
            </div>`
         : ""
     }
-    <p>Log in to <strong>SkillSphere</strong> to view your detailed score breakdown 
-       and AI performance summary.</p>
   `;
 
-  await transporter.sendMail({
-    from:    `"SkillSphere HR" <${process.env.GMAIL_USER}>`,
-    to,
+  await sendEmailJS({
+    to_email: to,
+    email: to,
+    user_email: to,
+    to: to,
+    to_name: name,
+    role: role,
+    action: action,
+    feedback: feedback || "",
     subject: `${accepted ? "✅" : "❌"} Assessment Result: ${role}`,
-    html:    htmlWrapper(content),
+    message: htmlWrapper(content),
+    html_message: htmlWrapper(content),
   });
 };
 
 // ── sendOtpEmail ──────────────────────────────────────────────────────────────
-/**
- * Sent during employee signup for email verification.
- * @param {string} to   - Employee email
- * @param {string} name - Employee name
- * @param {string} otp  - 6-digit OTP
- */
 exports.sendOtpEmail = async (to, name, otp) => {
   const content = `
     <h2>Hi ${name}! 🔐</h2>
@@ -154,10 +153,15 @@ exports.sendOtpEmail = async (to, name, otp) => {
     </p>
   `;
 
-  await transporter.sendMail({
-    from:    `"SkillSphere" <${process.env.GMAIL_USER}>`,
-    to,
+  await sendEmailJS({
+    to_email: to,
+    email: to,
+    user_email: to,
+    to: to,
+    to_name: name,
+    otp: otp,
     subject: `🔐 Your SkillSphere Verification Code: ${otp}`,
-    html:    htmlWrapper(content),
+    message: htmlWrapper(content),
+    html_message: htmlWrapper(content),
   });
 };
